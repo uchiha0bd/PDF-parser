@@ -3,25 +3,17 @@ import torch
 from pdf2image import convert_from_path
 from PIL import Image
 import pytesseract
-# This tokenizer is correctly configured for the new model
 from transformers import AutoTokenizer, AutoModelForTokenClassification
 
 # --- Configuration ---
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# The Windows-specific paths have been REMOVED.
+# The libraries will now automatically find the tools installed on Linux.
 PDF_PATH = "sample_document.pdf" 
-POPPLER_PATH = r"C:\poppler-25.07.0\Library\bin"
 
-# THE FIX: Use a correctly configured model that is also fine-tuned for forms
-# THE FIX: Use a correctly configured model that is also fine-tuned for forms
 MODEL_NAME =  "philschmid/layoutlm-funsd"
-
-# THE FIX: Use the actual labels the new model was trained on
 MODEL_LABELS = ["O", "B-HEADER", "I-HEADER", "B-QUESTION", "I-QUESTION", "B-ANSWER", "I-ANSWER"]
 ID_TO_LABEL = {i: label for i, label in enumerate(MODEL_LABELS)}
 LABEL_TO_ID = {label: i for i, label in enumerate(MODEL_LABELS)}
-
-
-
 
 # --- Helper Function: Normalize Bounding Boxes ---
 def normalize_bbox(bbox, width, height):
@@ -33,7 +25,8 @@ def normalize_bbox(bbox, width, height):
     ]
 
 # --- Main Processing Function ---
-def process_pdf_and_infer(pdf_path, model_name, id2label, label2id, poppler_path):
+# THE FIX: The poppler_path parameter is removed from the function definition.
+def process_pdf_and_infer(pdf_path, model_name, id2label, label2id):
     if not os.path.exists(pdf_path):
         print(f"Error: PDF file not found at {pdf_path}")
         return
@@ -42,7 +35,6 @@ def process_pdf_and_infer(pdf_path, model_name, id2label, label2id, poppler_path
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
     print(f"Loading model {model_name} for token classification...")
-    # We load the model with its own specific labels, which we have defined above
     model = AutoModelForTokenClassification.from_pretrained(MODEL_NAME)
     model.eval()
 
@@ -52,7 +44,9 @@ def process_pdf_and_infer(pdf_path, model_name, id2label, label2id, poppler_path
 
     print(f"Converting PDF '{pdf_path}' to images and performing OCR...")
     try:
-        pages = convert_from_path(pdf_path, poppler_path=poppler_path)
+        # THE FIX: The poppler_path argument is removed.
+        # The library will now search the system PATH for the tools.
+        pages = convert_from_path(pdf_path)
     except Exception as e:
         print(f"Error converting PDF: {e}")
         return
@@ -76,14 +70,12 @@ def process_pdf_and_infer(pdf_path, model_name, id2label, label2id, poppler_path
         
         normalized_bboxes = [normalize_bbox(bbox, width, height) for bbox in bboxes]
         
-        # This will now work perfectly
         encoding = tokenizer(
             text=words,
             boxes=normalized_bboxes,
             padding="max_length",
             truncation=True,
             return_tensors="pt",
-            is_split_into_words=True
         )
 
         input_ids = encoding["input_ids"].to(device)
@@ -103,8 +95,7 @@ def process_pdf_and_infer(pdf_path, model_name, id2label, label2id, poppler_path
             if word_id is not None:
                 predicted_label = model.config.id2label[predictions[i]]
                 
-                # A more robust way to handle word aggregation
-                if word_id != current_word_idx: # New word
+                if word_id != current_word_idx:
                     if current_word_idx != -1 and current_label != "O":
                         page_results["extracted_entities"].append({
                             "text": current_text, "label": current_label
@@ -113,10 +104,9 @@ def process_pdf_and_infer(pdf_path, model_name, id2label, label2id, poppler_path
                     current_word_idx = word_id
                     current_text = words[word_id]
                     current_label = predicted_label
-                else: # Same word (sub-token)
+                else:
                     current_text += tokenizer.decode(encoding['input_ids'][0][i]).replace("##", "")
 
-        # Add the last entity
         if current_word_idx != -1 and current_label != "O":
             page_results["extracted_entities"].append({
                 "text": current_text, "label": current_label
@@ -130,7 +120,8 @@ def process_pdf_and_infer(pdf_path, model_name, id2label, label2id, poppler_path
 if __name__ == "__main__":
     print("Starting PDF Parser Project...")
     
-    results = process_pdf_and_infer(PDF_PATH, MODEL_NAME, ID_TO_LABEL, LABEL_TO_ID, POPPLER_PATH)
+    # THE FIX: The POPPLER_PATH argument is removed from the function call.
+    results = process_pdf_and_infer(PDF_PATH, MODEL_NAME, ID_TO_LABEL, LABEL_TO_ID)
 
     if results:
         print("\n--- Final Extraction Results ---")
